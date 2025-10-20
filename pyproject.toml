@@ -1,12 +1,12 @@
 [project]
 name = "phopylslhelper"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
 authors = [
     { name = "Pho Hale", email = "PhoHale@gmail.com" }
 ]
-requires-python = ">=3.9.13"
+requires-python = ">=3.8.10"
 dependencies = [
     "pylsl>=1.17.6",
     "pytz>=2025.2",
