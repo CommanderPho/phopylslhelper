@@ -2,7 +2,7 @@ from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 from datetime import datetime, timedelta
 import pytz
 import pylsl
-from pylsl.pylsl import StreamInfo
+from pylsl import StreamInfo
 
 
 def readable_dt_str(a_dt: datetime, tz: pytz.timezone = pytz.timezone("US/Eastern")) -> str:
