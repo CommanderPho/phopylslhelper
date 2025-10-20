@@ -71,7 +71,7 @@ class EasyTimeSyncParsingMixin:
     def capture_current_arbitrary_time_sync_point(self, label: str):
         """ Capture the current time as an arbitrary time sync point """
         current_lsl_local_offset = pylsl.local_clock()
-        current_datetime = datetime.now(datetime.timezone.utc)
+        current_datetime = datetime.now(pytz.timezone('UTC')) # datetime.now(datetime.timezone.utc)
         self.add_arbitrary_time_sync_point(label, current_datetime, current_lsl_local_offset)
     
 
