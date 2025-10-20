@@ -3,16 +3,7 @@ from datetime import datetime, timedelta
 import pytz
 import pylsl
 from pylsl import StreamInfo
-
-
-def readable_dt_str(a_dt: datetime, tz: pytz.timezone = pytz.timezone("US/Eastern")) -> str:
-    """ returns the datetime in a readible string format """
-    return str(a_dt.astimezone(tz).strftime("%Y-%m-%d %I:%M:%S %p"))
-
-
-def from_readable_dt_str(a_dt_str: str, tz: pytz.timezone = pytz.timezone("US/Eastern")) -> datetime:
-    """ Inverse of `readable_dt_str(...)` """
-    return datetime.strptime(a_dt_str, "%Y-%m-%d %I:%M:%S %p").replace(tzinfo=tz)
+from phopylslhelper.general_helpers import unwrap_single_element_listlike_if_needed, readable_dt_str, from_readable_dt_str
 
 
 class EasyTimeSyncParsingMixin:
@@ -110,3 +101,41 @@ class EasyTimeSyncParsingMixin:
     
 
 
+    @classmethod
+    def parse_and_add_lsl_outlet_info_from_desc(cls, desc_info_dict: Dict, stream_info_dict: Dict) -> dict:
+        """Parse the LSL outlet info from the description dictionary
+        
+        
+                desc_info_dict = dict(stream['info'].get('desc', [{}])[0])
+                stream_info_dict = EasyTimeSyncParsingMixin.parse_and_add_lsl_outlet_info_from_desc(desc_info_dict=desc_info_dict, stream_info_dict=stream_info_dict) ## Returns the updated `stream_info_dict`
+
+        """
+        assert len(desc_info_dict) > 0
+        # label_names = ('recording_start', 'stream_start')
+        # custom_timestamp_keys = {'recording_start_lsl_local_offset_seconds': (lambda v: float(v)), 'recording_start_datetime': (lambda v: from_readable_dt_str(v))}
+        ## try to get the special marker timestamp helpers:
+        phopylslhelper_dict = unwrap_single_element_listlike_if_needed((desc_info_dict.get('phopylslhelper', {})))
+        assert len(phopylslhelper_dict) > 0
+
+        for a_key, a_value in phopylslhelper_dict.items():
+            if a_key.endswith('_datetime') and (a_value is not None):
+                a_ts_value = from_readable_dt_str(a_value)
+                stream_info_dict[a_key] = a_ts_value
+                print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
+            elif a_key.endswith('_lsl_local_offset_seconds') and (a_value is not None):
+                a_ts_value = float(a_value)
+                stream_info_dict[a_key] = a_ts_value
+                print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
+
+        # assert 'recording_start_lsl_local_offset_seconds' in desc_info_dict
+
+        # for a_key, a_value_type_convert_fn in custom_timestamp_keys.items():
+        #     ## NOTE IMPORTANT: this operates on `desc_info_dict` dict, not the same `stream_info_dict` as above
+        #     if desc_info_dict.get(a_key, None) is not None:
+        #         a_ts_value = a_value_type_convert_fn(unwrap_single_element_listlike_if_needed(desc_info_dict[a_key])) # ['169993.1081304000']
+        #         # a_ts_value_dt: datetime = file_datetime + pd.Timedelta(nanoseconds=a_ts_value)
+        #         stream_info_dict[a_key] = a_ts_value ## In-contrast to what we get the data from, we SET the data to `stream_info_dict` just as above (flattening)
+        #         print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
+
+
+        return stream_info_dict
