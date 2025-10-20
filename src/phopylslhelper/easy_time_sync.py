@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import pytz
 import pylsl
 from pylsl import StreamInfo
-from phopylslhelper.general_helpers import unwrap_single_element_listlike_if_needed, readable_dt_str, from_readable_dt_str
+from phopylslhelper.general_helpers import unwrap_single_element_listlike_if_needed, readable_dt_str, from_readable_dt_str, localize_datetime_to_timezone, tz_UTC, tz_Eastern, _default_tz
 
 
 class EasyTimeSyncParsingMixin:
@@ -105,7 +105,9 @@ class EasyTimeSyncParsingMixin:
     def parse_and_add_lsl_outlet_info_from_desc(cls, desc_info_dict: Dict, stream_info_dict: Dict) -> dict:
         """Parse the LSL outlet info from the description dictionary
         
-        
+        'stream_start_lsl_local_offset_seconds', 'stream_start_datetime'
+        'recording_start_lsl_local_offset_seconds', 'recording_start_datetime'
+
                 desc_info_dict = dict(stream['info'].get('desc', [{}])[0])
                 stream_info_dict = EasyTimeSyncParsingMixin.parse_and_add_lsl_outlet_info_from_desc(desc_info_dict=desc_info_dict, stream_info_dict=stream_info_dict) ## Returns the updated `stream_info_dict`
 
@@ -119,11 +121,11 @@ class EasyTimeSyncParsingMixin:
 
         for a_key, a_value in phopylslhelper_dict.items():
             if a_key.endswith('_datetime') and (a_value is not None):
-                a_ts_value = from_readable_dt_str(a_value)
+                a_ts_value = from_readable_dt_str(unwrap_single_element_listlike_if_needed(a_value))
                 stream_info_dict[a_key] = a_ts_value
                 print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
             elif a_key.endswith('_lsl_local_offset_seconds') and (a_value is not None):
-                a_ts_value = float(a_value)
+                a_ts_value = float(unwrap_single_element_listlike_if_needed(a_value))
                 stream_info_dict[a_key] = a_ts_value
                 print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
 
