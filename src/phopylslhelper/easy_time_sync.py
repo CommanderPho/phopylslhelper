@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 from datetime import datetime, timedelta
 import pytz
 import pylsl
+from pylsl.pylsl import StreamInfo
 
 
 def readable_dt_str(a_dt: datetime, tz: pytz.timezone = pytz.timezone("US/Eastern")) -> str:
@@ -90,5 +91,22 @@ class EasyTimeSyncParsingMixin:
 
 
 
+    ## LSL methods
+    def EasyTimeSyncParsingMixin_add_lsl_outlet_info(self, info: StreamInfo) -> StreamInfo:
+        """Add the current metadata
+        """
+        phopylslhelper_element = info.desc().append_child('phopylslhelper')
+        phopylslhelper_element.append_child_value("version", "0.1.2")
+        
+        ## add a custom timestamp field to the stream info:
+        assert (self._arbitrary_time_sync_points is not None), f"_arbitrary_time_sync_points is None"
+        for label_name, (dt, lsl_offset_sec) in self._arbitrary_time_sync_points.items():
+            if dt is not None:
+                phopylslhelper_element.append_child_value(f"{label_name}_datetime", readable_dt_str(dt))
+            if lsl_offset_sec is not None:
+                phopylslhelper_element.append_child_value(f"{label_name}_lsl_local_offset_seconds", str(lsl_offset_sec))
+
+        return info
+    
 
 
