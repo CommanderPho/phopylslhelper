@@ -122,6 +122,7 @@ class EasyTimeSyncParsingMixin:
         for a_key, a_value in phopylslhelper_dict.items():
             if a_key.endswith('_datetime') and (a_value is not None):
                 a_ts_value = from_readable_dt_str(unwrap_single_element_listlike_if_needed(a_value))
+                a_ts_value = a_ts_value.astimezone(tz_UTC) ## fixup to UTC
                 stream_info_dict[a_key] = a_ts_value
                 print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
             elif a_key.endswith('_lsl_local_offset_seconds') and (a_value is not None):
