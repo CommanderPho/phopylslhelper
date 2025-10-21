@@ -102,7 +102,7 @@ class EasyTimeSyncParsingMixin:
 
 
     @classmethod
-    def parse_and_add_lsl_outlet_info_from_desc(cls, desc_info_dict: Dict, stream_info_dict: Dict) -> dict:
+    def parse_and_add_lsl_outlet_info_from_desc(cls, desc_info_dict: Dict, stream_info_dict: Dict, should_fail_on_missing: bool=True) -> dict:
         """Parse the LSL outlet info from the description dictionary
         
         'stream_start_lsl_local_offset_seconds', 'stream_start_datetime'
@@ -117,8 +117,12 @@ class EasyTimeSyncParsingMixin:
         # custom_timestamp_keys = {'recording_start_lsl_local_offset_seconds': (lambda v: float(v)), 'recording_start_datetime': (lambda v: from_readable_dt_str(v))}
         ## try to get the special marker timestamp helpers:
         phopylslhelper_dict = unwrap_single_element_listlike_if_needed((desc_info_dict.get('phopylslhelper', {})))
-        assert len(phopylslhelper_dict) > 0
-
+        if should_fail_on_missing:
+            assert (len(phopylslhelper_dict) > 0)
+        else:
+            if (len(phopylslhelper_dict) > 0):
+                print(f'WARN: (len(phopylslhelper_dict){len(phopylslhelper_dict)}')
+                
         for a_key, a_value in phopylslhelper_dict.items():
             if a_key.endswith('_datetime') and (a_value is not None):
                 a_ts_value = from_readable_dt_str(unwrap_single_element_listlike_if_needed(a_value))
