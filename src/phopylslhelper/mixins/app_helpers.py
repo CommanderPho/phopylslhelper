@@ -21,28 +21,68 @@ import socket
 import sys
 from phopylslhelper.general_helpers import unwrap_single_element_listlike_if_needed, readable_dt_str, from_readable_dt_str, localize_datetime_to_timezone, tz_UTC, tz_Eastern, _default_tz
 
-program_lock_port = int(os.environ.get("LIVE_WHISPER_LOCK_PORT", 13372))
+
 
 
 class SingletonInstanceMixin:
-	""" 
+    """ 
     from phopylslhelper.mixins.app_helpers import SingletonInstanceMixin, AppThemeMixin, SystemTrayAppMixin
 
     Requires: self.root, 
 
-	"""
+    """
+    _SingletonInstanceMixin_env_lock_port_variable_name: str = "LIVE_WHISPER_LOCK_PORT"
+
     # Class variable to track if an instance is already running
     _instance_running = False
-    _lock_port = program_lock_port  # Port to use for singleton check
+    _lock_port = None  # Port to use for singleton check
+
+    @classmethod
+    def helper_SingletonInstanceMixin_get_lock_port(cls) -> int:
+        if cls._lock_port is None:
+            _SingletonInstanceMixin_env_lock_port_variable_name: str = cls._SingletonInstanceMixin_env_lock_port_variable_name
+            print(f'.helper_SingletonInstanceMixin_get_lock_port():\n\t_SingletonInstanceMixin_env_lock_port_variable_name: "{_SingletonInstanceMixin_env_lock_port_variable_name}"')
+            program_lock_port: int = int(os.environ.get(_SingletonInstanceMixin_env_lock_port_variable_name, 13372))
+            print(f'\tprogram_lock_port: {program_lock_port}')
+            cls._lock_port = program_lock_port  # Port to use for singleton check
+            return cls._lock_port
+        else:
+            return cls._lock_port
+
+
+    # @classmethod
+    def init_SingletonInstanceMixin(self):
+        """ 
+
+        """
+        # self
+        # a_class = cls
+        a_class = type(self)
+
+        a_class._instance_running = False
+        program_lock_port: int = a_class.helper_SingletonInstanceMixin_get_lock_port()
+
+        # _SingletonInstanceMixin_env_lock_port_variable_name: str = a_class._SingletonInstanceMixin_env_lock_port_variable_name
+        # print(f'.init_SingletonInstanceMixin():\n\t_SingletonInstanceMixin_env_lock_port_variable_name: "{_SingletonInstanceMixin_env_lock_port_variable_name}"')
+        # program_lock_port = int(os.environ.get(_SingletonInstanceMixin_env_lock_port_variable_name, 13372))
+        # print(f'\tprogram_lock_port: {program_lock_port}')
+        # a_class._lock_port = program_lock_port  # Port to use for singleton check
+
+        # Singleton lock socket
+        self._lock_socket = None
+
 
     @classmethod
     def is_instance_running(cls):
         """Check if another instance is already running"""
+        ## Get the correct lock port
+        program_lock_port: int = cls.helper_SingletonInstanceMixin_get_lock_port()
+
         try:
             # Try to bind to a specific port
             test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             test_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            test_socket.bind(('localhost', cls._lock_port))
+            test_socket.bind(('localhost', program_lock_port))
             test_socket.close()
             return False
         except OSError:
@@ -60,104 +100,107 @@ class SingletonInstanceMixin:
         cls._instance_running = False
 
 
-	def acquire_singleton_lock(self):
-		"""Acquire the singleton lock by binding to the port"""
-		try:
-			self._lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			self._lock_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-			self._lock_socket.bind(('localhost', self._lock_port))
-			self._lock_socket.listen(1)
-			self.mark_instance_running()
-			print("Singleton lock acquired successfully")
-			return True
-		except OSError as e:
-			print(f"Failed to acquire singleton lock: {e}")
-			return False
+    def acquire_singleton_lock(self):
+        """Acquire the singleton lock by binding to the port"""
+        try:
+            ## Get the correct lock port
+            program_lock_port: int = self.helper_SingletonInstanceMixin_get_lock_port()
 
-	def release_singleton_lock(self):
-		"""Release the singleton lock and clean up the socket"""
-		try:
-			if self._lock_socket:
-				self._lock_socket.close()
-				self._lock_socket = None
-			self.mark_instance_stopped()
-			print("Singleton lock released")
-		except Exception as e:
-			print(f"Error releasing singleton lock: {e}")
+            self._lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._lock_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._lock_socket.bind(('localhost', program_lock_port))
+            self._lock_socket.listen(1)
+            self.mark_instance_running()
+            print("Singleton lock acquired successfully")
+            return True
+        except OSError as e:
+            print(f"Failed to acquire singleton lock: {e}")
+            return False
+
+    def release_singleton_lock(self):
+        """Release the singleton lock and clean up the socket"""
+        try:
+            if self._lock_socket:
+                self._lock_socket.close()
+                self._lock_socket = None
+            self.mark_instance_stopped()
+            print("Singleton lock released")
+        except Exception as e:
+            print(f"Error releasing singleton lock: {e}")
 
 
 
 
 
-    def __init__(self, root, xdf_folder=None):
-        self.root = root
-        self.root.title("LSL Logger with XDF Recording")
-        self.root.geometry("520x720") # WxH
+    # def __init__(self, root, xdf_folder=None):
+    #     self.root = root
+    #     self.root.title("LSL Logger with XDF Recording")
+    #     self.root.geometry("520x720") # WxH
 
-        self.stream_names = ['TextLogger', 'EventBoard', 'WhisperLiveLogger'] # : List[str]
+    #     self.stream_names = ['TextLogger', 'EventBoard', 'WhisperLiveLogger'] # : List[str]
 
-        # Set application icon
-        self.setup_app_icon()
-        self.xdf_folder = (xdf_folder or _default_xdf_folder)
+    #     # Set application icon
+    #     self.setup_app_icon()
+    #     self.xdf_folder = (xdf_folder or _default_xdf_folder)
 
-        # Recording state
-        self.recording = False
-        self.recording_thread = None
-        # self.inlet = None
-        self.inlets = {}
-        self.outlets = {}
+    #     # Recording state
+    #     self.recording = False
+    #     self.recording_thread = None
+    #     # self.inlet = None
+    #     self.inlets = {}
+    #     self.outlets = {}
 
-        self.recorded_data = []
-        # self.recording_start_lsl_local_offset = None
-        # self.recording_start_datetime = None
+    #     self.recorded_data = []
+    #     # self.recording_start_lsl_local_offset = None
+    #     # self.recording_start_datetime = None
 
-        self.init_EasyTimeSyncParsingMixin()
-        # Live transcription state
-        self.init_LiveWhisperTranscriptionAppMixin()
+    #     self.init_EasyTimeSyncParsingMixin()
+    #     # Live transcription state
+    #     self.init_LiveWhisperTranscriptionAppMixin()
 
-        # System tray and hotkey state
-        self.system_tray = None
-        self.hotkey_popover = None
-        self.is_minimized = False
+    #     # System tray and hotkey state
+    #     self.system_tray = None
+    #     self.hotkey_popover = None
+    #     self.is_minimized = False
 
-        # Singleton lock socket
-        self._lock_socket = None
+    #     # Singleton lock socket
+    #     self._lock_socket = None
 
-        # Shutdown flag to prevent GUI updates during shutdown
-        self._shutting_down = False
+    #     # Shutdown flag to prevent GUI updates during shutdown
+    #     self._shutting_down = False
 
-        # Timestamp tracking for text entry
-        self.main_text_start_editing_timestamp = None
-        self.popover_text_timestamp = None
+    #     # Timestamp tracking for text entry
+    #     self.main_text_start_editing_timestamp = None
+    #     self.popover_text_timestamp = None
 
-        # EventBoard configuration and outlet
-        self.eventboard_config = None
-        self.eventboard_outlet = None
-        self.eventboard_buttons = {}
-        self.eventboard_toggle_states = {}  # Track toggle states
-        self.eventboard_time_offsets = {}   # Track time offset dropdowns
+    #     # EventBoard configuration and outlet
+    #     self.eventboard_config = None
+    #     self.eventboard_outlet = None
+    #     self.eventboard_buttons = {}
+    #     self.eventboard_toggle_states = {}  # Track toggle states
+    #     self.eventboard_time_offsets = {}   # Track time offset dropdowns
 
-        self.capture_stream_start_timestamps() ## `EasyTimeSyncParsingMixin`: capture timestamps for use in LSL streams
-        self.capture_recording_start_timestamps() ## capture timestamps for use in LSL streams
+    #     self.capture_stream_start_timestamps() ## `EasyTimeSyncParsingMixin`: capture timestamps for use in LSL streams
+    #     self.capture_recording_start_timestamps() ## capture timestamps for use in LSL streams
 
-        # Load EventBoard configuration
-        self.load_eventboard_config()
+    #     # Load EventBoard configuration
+    #     self.load_eventboard_config()
 
-        # Create GUI elements first
-        self.setup_gui()
+    #     # Create GUI elements first
+    #     self.setup_gui()
 
-        # Check for recovery files
-        self.check_for_recovery()
+    #     # Check for recovery files
+    #     self.check_for_recovery()
 
-        # Then create LSL outlets
-        self.setup_lsl_outlet()
+    #     # Then create LSL outlets
+    #     self.setup_lsl_outlet()
 
-        ## setup transcirption
-        self.root.after(200, self.auto_start_live_transcription)
+    #     ## setup transcirption
+    #     self.root.after(200, self.auto_start_live_transcription)
 
-        # Setup system tray and global hotkey
-        self.setup_system_tray()
-        self.setup_global_hotkey()
+    #     # Setup system tray and global hotkey
+    #     self.setup_system_tray()
+    #     self.setup_global_hotkey()
 
 
 
@@ -257,6 +300,28 @@ class SystemTrayAppMixin:
         self.on_closing()
 
     """
+
+    def init_SystemTrayAppMixin(self):
+        """
+
+        """
+        # System tray and hotkey state
+        self.system_tray = None
+        self.hotkey_popover = None
+        self.is_minimized = False
+
+
+
+    def setup_SystemTrayAppMixin(self):
+        """
+
+        """
+        self.setup_app_icon()
+        # Setup system tray and global hotkey
+        self.setup_system_tray()
+        self.setup_global_hotkey()
+
+
     def setup_system_tray(self):
         """Setup system tray icon and menu"""
         try:
@@ -323,7 +388,7 @@ class SystemTrayAppMixin:
 
         return image
 
-	# Lifecycle methods __________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+    # Lifecycle methods __________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
 
     def show_app(self):
         """Show the main application window"""
