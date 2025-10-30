@@ -42,7 +42,7 @@ class SingletonInstanceMixin:
         if cls._lock_port is None:
             _SingletonInstanceMixin_env_lock_port_variable_name: str = cls._SingletonInstanceMixin_env_lock_port_variable_name
             print(f'.helper_SingletonInstanceMixin_get_lock_port():\n\t_SingletonInstanceMixin_env_lock_port_variable_name: "{_SingletonInstanceMixin_env_lock_port_variable_name}"')
-            program_lock_port: int = int(os.environ.get(_SingletonInstanceMixin_env_lock_port_variable_name, 13372))
+            program_lock_port: int = int(os.environ.get(_SingletonInstanceMixin_env_lock_port_variable_name, 13375))
             print(f'\tprogram_lock_port: {program_lock_port}')
             cls._lock_port = program_lock_port  # Port to use for singleton check
             return cls._lock_port
@@ -64,7 +64,7 @@ class SingletonInstanceMixin:
 
         # _SingletonInstanceMixin_env_lock_port_variable_name: str = a_class._SingletonInstanceMixin_env_lock_port_variable_name
         # print(f'.init_SingletonInstanceMixin():\n\t_SingletonInstanceMixin_env_lock_port_variable_name: "{_SingletonInstanceMixin_env_lock_port_variable_name}"')
-        # program_lock_port = int(os.environ.get(_SingletonInstanceMixin_env_lock_port_variable_name, 13372))
+        # program_lock_port = int(os.environ.get(_SingletonInstanceMixin_env_lock_port_variable_name, 13375))
         # print(f'\tprogram_lock_port: {program_lock_port}')
         # a_class._lock_port = program_lock_port  # Port to use for singleton check
 
@@ -77,12 +77,13 @@ class SingletonInstanceMixin:
         """Check if another instance is already running"""
         ## Get the correct lock port
         program_lock_port: int = cls.helper_SingletonInstanceMixin_get_lock_port()
+        print(f'program_lock_port: {program_lock_port}')
 
         try:
             # Try to bind to a specific port
             test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             test_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            test_socket.bind(('localhost', program_lock_port))
+            test_socket.bind(('127.0.0.1', program_lock_port))
             test_socket.close()
             return False
         except OSError:
@@ -108,7 +109,7 @@ class SingletonInstanceMixin:
 
             self._lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._lock_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self._lock_socket.bind(('localhost', program_lock_port))
+            self._lock_socket.bind(('127.0.0.1', program_lock_port))
             self._lock_socket.listen(1)
             self.mark_instance_running()
             print("Singleton lock acquired successfully")
