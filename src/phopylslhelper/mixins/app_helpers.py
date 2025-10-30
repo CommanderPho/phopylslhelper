@@ -3,7 +3,10 @@ from copy import deepcopy
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import pylsl
-import pyxdf
+import os
+import socket
+import atexit
+import signal
 from datetime import datetime, timedelta
 import pytz
 import os
@@ -12,114 +15,103 @@ import time
 import numpy as np
 import json
 import pickle
-import mne
 from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
-import keyboard
 import socket
 import sys
 from phopylslhelper.general_helpers import unwrap_single_element_listlike_if_needed, readable_dt_str, from_readable_dt_str, localize_datetime_to_timezone, tz_UTC, tz_Eastern, _default_tz
 
 
-
-
 class SingletonInstanceMixin:
-    """ 
-    from phopylslhelper.mixins.app_helpers import SingletonInstanceMixin, AppThemeMixin, SystemTrayAppMixin
-
-    Requires: self.root, 
-
     """
-    _SingletonInstanceMixin_env_lock_port_variable_name: str = "LIVE_WHISPER_LOCK_PORT"
+    Safe singleton lock using TCP port. Works across crashes and avoids WinError 10013.
+    """
 
-    # Class variable to track if an instance is already running
+    _SingletonInstanceMixin_env_lock_port_variable_name: str = "LIVE_WHISPER_LOCK_PORT"
     _instance_running = False
-    _lock_port = None  # Port to use for singleton check
+    _lock_port = None
+
+    # @classmethod
+    def init_SingletonInstanceMixin(self):
+        a_class = type(self)
+        a_class._instance_running = False
+        # Singleton lock socket
+        self._lock_socket = None
+
+        # Ensure lock released on normal exit
+        atexit.register(self.release_singleton_lock)
+        # Ensure lock released on Ctrl+C / termination
+        signal.signal(signal.SIGTERM, lambda *_: self.release_singleton_lock() or sys.exit(0))
+        signal.signal(signal.SIGINT,  lambda *_: self.release_singleton_lock() or sys.exit(0))
+
+
+
+
+
 
     @classmethod
     def helper_SingletonInstanceMixin_get_lock_port(cls) -> int:
         if cls._lock_port is None:
-            _SingletonInstanceMixin_env_lock_port_variable_name: str = cls._SingletonInstanceMixin_env_lock_port_variable_name
-            print(f'.helper_SingletonInstanceMixin_get_lock_port():\n\t_SingletonInstanceMixin_env_lock_port_variable_name: "{_SingletonInstanceMixin_env_lock_port_variable_name}"')
-            program_lock_port: int = int(os.environ.get(_SingletonInstanceMixin_env_lock_port_variable_name, 13375))
-            print(f'\tprogram_lock_port: {program_lock_port}')
-            cls._lock_port = program_lock_port  # Port to use for singleton check
-            return cls._lock_port
-        else:
-            return cls._lock_port
-
-
-    # @classmethod
-    def init_SingletonInstanceMixin(self):
-        """ 
-
-        """
-        # self
-        # a_class = cls
-        a_class = type(self)
-
-        a_class._instance_running = False
-        program_lock_port: int = a_class.helper_SingletonInstanceMixin_get_lock_port()
-
-        # _SingletonInstanceMixin_env_lock_port_variable_name: str = a_class._SingletonInstanceMixin_env_lock_port_variable_name
-        # print(f'.init_SingletonInstanceMixin():\n\t_SingletonInstanceMixin_env_lock_port_variable_name: "{_SingletonInstanceMixin_env_lock_port_variable_name}"')
-        # program_lock_port = int(os.environ.get(_SingletonInstanceMixin_env_lock_port_variable_name, 13375))
-        # print(f'\tprogram_lock_port: {program_lock_port}')
-        # a_class._lock_port = program_lock_port  # Port to use for singleton check
-
-        # Singleton lock socket
-        self._lock_socket = None
-
+            env_port = os.environ.get(cls._SingletonInstanceMixin_env_lock_port_variable_name)
+            print(f'env_port: {env_port}')
+            cls._lock_port = int(env_port) if env_port else 13372
+            print(f'cls._lock_port: {cls._lock_port}')
+        return cls._lock_port
 
     @classmethod
     def is_instance_running(cls):
         """Check if another instance is already running"""
-        ## Get the correct lock port
-        program_lock_port: int = cls.helper_SingletonInstanceMixin_get_lock_port()
-        print(f'program_lock_port: {program_lock_port}')
-
+        print(f'is_instance_running')
+        port = cls.helper_SingletonInstanceMixin_get_lock_port()
+        print(f'port: {port}')
         try:
-            # Try to bind to a specific port
-            test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            test_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            test_socket.bind(('127.0.0.1', program_lock_port))
-            test_socket.close()
+            print(f'trying to bind to port {port}')
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('127.0.0.1', port))
+            s.close()
             return False
         except OSError:
-            # Port is already in use, another instance is running
             return True
 
     @classmethod
     def mark_instance_running(cls):
-        """Mark that an instance is now running"""
         cls._instance_running = True
 
     @classmethod
     def mark_instance_stopped(cls):
-        """Mark that the instance has stopped"""
         cls._instance_running = False
 
+    def acquire_singleton_lock(self, preferred_port=None, fallback_ports=None):
+        """
+        Try preferred port first, then fallbacks.
+        Returns True if lock acquired.
+        """
+        preferred_port = preferred_port or self.helper_SingletonInstanceMixin_get_lock_port()
+        fallback_ports = fallback_ports or range(50000, 50010)
+        ports_to_try = [preferred_port] + list(fallback_ports)
 
-    def acquire_singleton_lock(self):
-        """Acquire the singleton lock by binding to the port"""
-        try:
-            ## Get the correct lock port
-            program_lock_port: int = self.helper_SingletonInstanceMixin_get_lock_port()
-
-            self._lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._lock_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self._lock_socket.bind(('127.0.0.1', program_lock_port))
-            self._lock_socket.listen(1)
-            self.mark_instance_running()
-            print("Singleton lock acquired successfully")
-            return True
-        except OSError as e:
-            print(f"Failed to acquire singleton lock: {e}")
-            return False
+        for port in ports_to_try:
+            try:
+                self._lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self._lock_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self._lock_socket.bind(('127.0.0.1', port))
+                self._lock_socket.listen(1)
+                self._lock_port = port
+                self.mark_instance_running()
+                print(f"Singleton lock acquired on port {port}")
+                return True
+            except OSError as e:
+                print(f"Port {port} unavailable: {e}")
+                if self._lock_socket:
+                    self._lock_socket.close()
+                self._lock_socket = None
+        print("Failed to acquire singleton lock on all ports")
+        return False
 
     def release_singleton_lock(self):
-        """Release the singleton lock and clean up the socket"""
+        """Release the singleton lock"""
         try:
             if self._lock_socket:
                 self._lock_socket.close()
@@ -128,80 +120,6 @@ class SingletonInstanceMixin:
             print("Singleton lock released")
         except Exception as e:
             print(f"Error releasing singleton lock: {e}")
-
-
-
-
-
-    # def __init__(self, root, xdf_folder=None):
-    #     self.root = root
-    #     self.root.title("LSL Logger with XDF Recording")
-    #     self.root.geometry("520x720") # WxH
-
-    #     self.stream_names = ['TextLogger', 'EventBoard', 'WhisperLiveLogger'] # : List[str]
-
-    #     # Set application icon
-    #     self.setup_app_icon()
-    #     self.xdf_folder = (xdf_folder or _default_xdf_folder)
-
-    #     # Recording state
-    #     self.recording = False
-    #     self.recording_thread = None
-    #     # self.inlet = None
-    #     self.inlets = {}
-    #     self.outlets = {}
-
-    #     self.recorded_data = []
-    #     # self.recording_start_lsl_local_offset = None
-    #     # self.recording_start_datetime = None
-
-    #     self.init_EasyTimeSyncParsingMixin()
-    #     # Live transcription state
-    #     self.init_LiveWhisperTranscriptionAppMixin()
-
-    #     # System tray and hotkey state
-    #     self.system_tray = None
-    #     self.hotkey_popover = None
-    #     self.is_minimized = False
-
-    #     # Singleton lock socket
-    #     self._lock_socket = None
-
-    #     # Shutdown flag to prevent GUI updates during shutdown
-    #     self._shutting_down = False
-
-    #     # Timestamp tracking for text entry
-    #     self.main_text_start_editing_timestamp = None
-    #     self.popover_text_timestamp = None
-
-    #     # EventBoard configuration and outlet
-    #     self.eventboard_config = None
-    #     self.eventboard_outlet = None
-    #     self.eventboard_buttons = {}
-    #     self.eventboard_toggle_states = {}  # Track toggle states
-    #     self.eventboard_time_offsets = {}   # Track time offset dropdowns
-
-    #     self.capture_stream_start_timestamps() ## `EasyTimeSyncParsingMixin`: capture timestamps for use in LSL streams
-    #     self.capture_recording_start_timestamps() ## capture timestamps for use in LSL streams
-
-    #     # Load EventBoard configuration
-    #     self.load_eventboard_config()
-
-    #     # Create GUI elements first
-    #     self.setup_gui()
-
-    #     # Check for recovery files
-    #     self.check_for_recovery()
-
-    #     # Then create LSL outlets
-    #     self.setup_lsl_outlet()
-
-    #     ## setup transcirption
-    #     self.root.after(200, self.auto_start_live_transcription)
-
-    #     # Setup system tray and global hotkey
-    #     self.setup_system_tray()
-    #     self.setup_global_hotkey()
 
 
 
