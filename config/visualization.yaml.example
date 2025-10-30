@@ -1,0 +1,13 @@
+# Visualization-specific configuration example
+
+visualization:
+  backend: "mne-lsl"  # Options: "mne-lsl", "pyqt5", "web"
+  
+  streams:
+    - "EEG_stream_1"
+  
+  update_rate: 30.0
+  buffer_size: 1000
+
+log_level: "INFO"
+

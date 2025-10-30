@@ -1,0 +1,20 @@
+# Cloud streaming configuration example
+
+cloud_streaming:
+  enabled: true
+  
+  mqtt:
+    broker: "mqtt.example.com"
+    port: 1883
+    username: "${MQTT_USERNAME}"  # Use environment variable
+    password: "${MQTT_PASSWORD}"    # Use environment variable
+    tls: false
+    qos: 1
+    keepalive: 60
+    
+    topics:
+      - stream: "EEG_stream_1"
+        topic: "lsl/eeg/stream1"
+
+log_level: "INFO"
+

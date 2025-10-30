@@ -1,0 +1,55 @@
+# Example configuration file for LSL Stream Tools
+# Copy this file to config.yaml and customize for your needs
+
+# Visualization settings
+visualization:
+  # Backend: "mne-lsl", "pyqt5", or "web"
+  backend: "mne-lsl"
+  
+  # List of stream names to visualize
+  streams:
+    - "EEG_stream_1"
+    # - "EEG_stream_2"
+  
+  # Update rate in frames per second
+  update_rate: 30.0
+  
+  # Buffer size (number of samples to keep in memory)
+  buffer_size: 1000
+
+# Cloud streaming settings
+cloud_streaming:
+  # Enable/disable cloud streaming
+  enabled: false
+  
+  # MQTT configuration
+  mqtt:
+    # Broker hostname or IP address
+    broker: "mqtt.example.com"
+    
+    # Broker port (default: 1883 for non-TLS, 8883 for TLS)
+    port: 1883
+    
+    # Authentication (optional)
+    # username: "${MQTT_USERNAME}"
+    # password: "${MQTT_PASSWORD}"
+    
+    # Use TLS encryption (default: false)
+    tls: false
+    
+    # Quality of Service level (0, 1, or 2)
+    qos: 1
+    
+    # Keepalive interval in seconds
+    keepalive: 60
+    
+    # Topic mappings (stream name -> MQTT topic)
+    topics:
+      - stream: "EEG_stream_1"
+        topic: "lsl/eeg/stream1"
+      # - stream: "EEG_stream_2"
+      #   topic: "lsl/eeg/stream2"
+
+# Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_level: "INFO"
+
