@@ -4,12 +4,10 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import pylsl
 import os
-import socket
 import atexit
 import signal
 from datetime import datetime, timedelta
 import pytz
-import os
 import threading
 import time
 import numpy as np
@@ -18,26 +16,84 @@ import pickle
 from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
-import socket
 import sys
+import platform
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 from phopylslhelper.general_helpers import unwrap_single_element_listlike_if_needed, readable_dt_str, from_readable_dt_str, localize_datetime_to_timezone, tz_UTC, tz_Eastern, _default_tz
 
 
 class SingletonInstanceMixin:
     """
-    Safe singleton lock using TCP port. Works across crashes and avoids WinError 10013.
+    Safe singleton lock using file-based locking. Works across crashes and avoids port conflicts.
+    Lock file is located in the executable directory.
     """
 
-    _SingletonInstanceMixin_env_lock_port_variable_name: str = "LIVE_WHISPER_LOCK_PORT"
+    _SingletonInstanceMixin_env_lock_file_name: str = "LIVE_WHISPER_LOCK_FILE"
     _instance_running = False
-    _lock_port = None
+    _lock_file_path = None
 
-    # @classmethod
+    @classmethod
+    def _get_executable_directory(cls) -> Path:
+        """Get the directory containing the executable"""
+        return Path(sys.executable).parent
+
+    @classmethod
+    def _get_lock_file_path(cls) -> Path:
+        """Get the path to the lock file"""
+        if cls._lock_file_path is None:
+            env_file = os.environ.get(cls._SingletonInstanceMixin_env_lock_file_name)
+            if env_file:
+                cls._lock_file_path = Path(env_file)
+            else:
+                # Default: use executable name with .lock extension
+                exe_dir = cls._get_executable_directory()
+                exe_name = Path(sys.executable).stem if hasattr(sys, 'executable') else "app"
+                cls._lock_file_path = exe_dir / f"{exe_name}.lock"
+        return cls._lock_file_path
+
+    @classmethod
+    def _is_process_running(cls, pid: int) -> bool:
+        """Check if a process with the given PID is still running"""
+        try:
+            if platform.system() == "Windows":
+                # On Windows, os.kill with signal 0 checks if process exists
+                os.kill(pid, 0)
+                return True
+            else:
+                # On Unix/macOS, os.kill with signal 0 checks if process exists
+                os.kill(pid, 0)
+                return True
+        except (OSError, ProcessLookupError):
+            return False
+
+    @classmethod
+    def _is_lock_stale(cls, lock_path: Path) -> bool:
+        """Check if the lock file exists and if it's stale (process no longer running)"""
+        if not lock_path.exists():
+            return False
+        try:
+            with open(lock_path, 'r') as f:
+                pid_str = f.read().strip()
+                if pid_str:
+                    pid = int(pid_str)
+                    return not cls._is_process_running(pid)
+        except (ValueError, IOError):
+            # Lock file exists but is invalid, consider it stale
+            return True
+        return False
+
     def init_SingletonInstanceMixin(self):
         a_class = type(self)
         a_class._instance_running = False
-        # Singleton lock socket
-        self._lock_socket = None
+        # Singleton lock file
+        self._lock_file_handle = None
 
         # Ensure lock released on normal exit
         atexit.register(self.release_singleton_lock)
@@ -51,28 +107,47 @@ class SingletonInstanceMixin:
 
 
     @classmethod
-    def helper_SingletonInstanceMixin_get_lock_port(cls) -> int:
-        if cls._lock_port is None:
-            env_port = os.environ.get(cls._SingletonInstanceMixin_env_lock_port_variable_name)
-            print(f'env_port: {env_port}')
-            cls._lock_port = int(env_port) if env_port else 13372
-            print(f'cls._lock_port: {cls._lock_port}')
-        return cls._lock_port
-
-    @classmethod
     def is_instance_running(cls):
         """Check if another instance is already running"""
-        print(f'is_instance_running')
-        port = cls.helper_SingletonInstanceMixin_get_lock_port()
-        print(f'port: {port}')
-        try:
-            print(f'trying to bind to port {port}')
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(('127.0.0.1', port))
-            s.close()
+        lock_path = cls._get_lock_file_path()
+        
+        # If lock file doesn't exist, no instance is running
+        if not lock_path.exists():
             return False
-        except OSError:
+        
+        # Check if lock is stale (process no longer running)
+        if cls._is_lock_stale(lock_path):
+            return False
+        
+        # Try to acquire lock to verify it's actually held
+        try:
+            if platform.system() == "Windows":
+                # Windows: use msvcrt.locking
+                if msvcrt is None:
+                    return True  # Assume running if we can't check
+                with open(lock_path, 'r+b') as f:
+                    try:
+                        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                        # If we got here, lock is not held
+                        return False
+                    except IOError:
+                        # Lock is held
+                        return True
+            else:
+                # Unix/macOS: use fcntl.flock
+                if fcntl is None:
+                    return True  # Assume running if we can't check
+                with open(lock_path, 'r') as f:
+                    try:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        # If we got here, lock is not held
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                        return False
+                    except BlockingIOError:
+                        # Lock is held
+                        return True
+        except (IOError, OSError):
+            # Error checking lock, assume instance is running to be safe
             return True
 
     @classmethod
@@ -85,41 +160,116 @@ class SingletonInstanceMixin:
 
     def acquire_singleton_lock(self, preferred_port=None, fallback_ports=None):
         """
-        Try preferred port first, then fallbacks.
+        Acquire the singleton lock using file-based locking.
         Returns True if lock acquired.
+        Note: preferred_port and fallback_ports parameters are kept for compatibility but ignored.
         """
-        preferred_port = preferred_port or self.helper_SingletonInstanceMixin_get_lock_port()
-        fallback_ports = fallback_ports or range(50000, 50010)
-        ports_to_try = [preferred_port] + list(fallback_ports)
-
-        for port in ports_to_try:
+        lock_path = self._get_lock_file_path()
+        
+        # Check if lock exists and is stale, remove it if so
+        if self._is_lock_stale(lock_path):
             try:
-                self._lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self._lock_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                self._lock_socket.bind(('127.0.0.1', port))
-                self._lock_socket.listen(1)
-                self._lock_port = port
-                self.mark_instance_running()
-                print(f"Singleton lock acquired on port {port}")
-                return True
+                lock_path.unlink()
+                print(f"Removed stale lock file: {lock_path}")
             except OSError as e:
-                print(f"Port {port} unavailable: {e}")
-                if self._lock_socket:
-                    self._lock_socket.close()
-                self._lock_socket = None
-        print("Failed to acquire singleton lock on all ports")
-        return False
+                print(f"Warning: Could not remove stale lock file: {e}")
+        
+        try:
+            # Create lock file directory if it doesn't exist
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Open lock file in appropriate mode
+            if platform.system() == "Windows":
+                # Windows: open in a+b mode (creates if doesn't exist) for msvcrt.locking
+                self._lock_file_handle = open(lock_path, 'a+b')
+                try:
+                    msvcrt.locking(self._lock_file_handle.fileno(), msvcrt.LK_NBLCK, 1)
+                except IOError:
+                    self._lock_file_handle.close()
+                    self._lock_file_handle = None
+                    print(f"Lock file is already held: {lock_path}")
+                    return False
+            else:
+                # Unix/macOS: open in w+ mode for fcntl.flock
+                self._lock_file_handle = open(lock_path, 'w+')
+                try:
+                    fcntl.flock(self._lock_file_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    self._lock_file_handle.close()
+                    self._lock_file_handle = None
+                    print(f"Lock file is already held: {lock_path}")
+                    return False
+            
+            # Write PID to lock file
+            pid = os.getpid()
+            self._lock_file_handle.seek(0)
+            self._lock_file_handle.truncate()
+            if platform.system() == "Windows":
+                self._lock_file_handle.write(str(pid).encode())
+            else:
+                self._lock_file_handle.write(str(pid))
+            self._lock_file_handle.flush()
+            
+            self.mark_instance_running()
+            print(f"Singleton lock acquired: {lock_path}")
+            return True
+        except (IOError, OSError) as e:
+            if self._lock_file_handle:
+                try:
+                    self._lock_file_handle.close()
+                except:
+                    pass
+                self._lock_file_handle = None
+            print(f"Failed to acquire singleton lock: {e}")
+            return False
 
     def release_singleton_lock(self):
         """Release the singleton lock"""
         try:
-            if self._lock_socket:
-                self._lock_socket.close()
-                self._lock_socket = None
+            if self._lock_file_handle:
+                if platform.system() == "Windows":
+                    if msvcrt is not None:
+                        try:
+                            msvcrt.locking(self._lock_file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                        except:
+                            pass
+                else:
+                    if fcntl is not None:
+                        try:
+                            fcntl.flock(self._lock_file_handle.fileno(), fcntl.LOCK_UN)
+                        except:
+                            pass
+                self._lock_file_handle.close()
+                self._lock_file_handle = None
+            
+            # Remove lock file
+            lock_path = self._get_lock_file_path()
+            if lock_path.exists():
+                try:
+                    lock_path.unlink()
+                except OSError:
+                    pass
+            
             self.mark_instance_stopped()
             print("Singleton lock released")
         except Exception as e:
             print(f"Error releasing singleton lock: {e}")
+
+    @classmethod
+    def force_remove_lock(cls):
+        """Force-remove any existing lock file, useful for cleaning up after crashes"""
+        lock_path = cls._get_lock_file_path()
+        if lock_path.exists():
+            try:
+                lock_path.unlink()
+                print(f"Force-removed lock file: {lock_path}")
+                return True
+            except OSError as e:
+                print(f"Error force-removing lock file: {e}")
+                return False
+        else:
+            print(f"No lock file to remove: {lock_path}")
+            return False
 
 
 
