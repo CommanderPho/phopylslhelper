@@ -64,13 +64,22 @@ class SingletonInstanceMixin:
         try:
             if platform.system() == "Windows":
                 # On Windows, os.kill with signal 0 checks if process exists
-                os.kill(pid, 0)
-                return True
+                # Use a more robust check to avoid SystemError on Windows
+                try:
+                    os.kill(pid, 0)
+                    return True
+                except OSError as e:
+                    # On Windows, error 87 means invalid parameter (process doesn't exist)
+                    # Error 3 means process not found
+                    if e.winerror in (87, 3) or e.errno in (3,):
+                        return False
+                    # Re-raise other OSErrors
+                    raise
             else:
                 # On Unix/macOS, os.kill with signal 0 checks if process exists
                 os.kill(pid, 0)
                 return True
-        except (OSError, ProcessLookupError):
+        except (OSError, ProcessLookupError, SystemError):
             return False
 
     @classmethod
