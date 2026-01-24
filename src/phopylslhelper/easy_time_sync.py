@@ -1,5 +1,5 @@
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 import pylsl
 from pylsl import StreamInfo
@@ -102,7 +102,7 @@ class EasyTimeSyncParsingMixin:
 
 
     @classmethod
-    def parse_and_add_lsl_outlet_info_from_desc(cls, desc_info_dict: Dict, stream_info_dict: Dict, should_fail_on_missing: bool=True) -> dict:
+    def parse_and_add_lsl_outlet_info_from_desc(cls, desc_info_dict: Dict, stream_info_dict: Dict, should_fail_on_missing: bool=True, should_return_datetime_timezone_UTC: bool=False) -> dict:
         """Parse the LSL outlet info from the description dictionary
         
         'stream_start_lsl_local_offset_seconds', 'stream_start_datetime'
@@ -127,6 +127,9 @@ class EasyTimeSyncParsingMixin:
             if a_key.endswith('_datetime') and (a_value is not None):
                 a_ts_value = from_readable_dt_str(unwrap_single_element_listlike_if_needed(a_value))
                 a_ts_value = a_ts_value.astimezone(tz_UTC) ## fixup to UTC
+                if should_return_datetime_timezone_UTC:
+                    ## Convert to `timezone.utc` instead of `tz_UTC` for compatibility with MNE.
+                    a_ts_value = a_ts_value.astimezone(timezone.utc)
                 stream_info_dict[a_key] = a_ts_value
                 print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
             elif a_key.endswith('_lsl_local_offset_seconds') and (a_value is not None):
