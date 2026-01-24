@@ -1,6 +1,6 @@
 [project]
 name = "phopylslhelper"
-version = "0.1.3"
+version = "0.1.4"
 description = "A simple wrapper/helper for easy loging with pylsl (labstreaminglayer) "
 readme = "README.md"
 authors = [

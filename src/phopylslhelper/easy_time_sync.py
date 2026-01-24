@@ -1,6 +1,6 @@
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from datetime import datetime, timedelta
-import pytz
+from datetime import datetime, timedelta, timezone
+import pytz ## not needed any more?
 import pylsl
 from pylsl import StreamInfo
 from phopylslhelper.general_helpers import unwrap_single_element_listlike_if_needed, readable_dt_str, from_readable_dt_str, localize_datetime_to_timezone, tz_UTC, tz_Eastern, _default_tz
@@ -62,7 +62,7 @@ class EasyTimeSyncParsingMixin:
     def capture_current_arbitrary_time_sync_point(self, label: str):
         """ Capture the current time as an arbitrary time sync point """
         current_lsl_local_offset = pylsl.local_clock()
-        current_datetime = datetime.now(pytz.timezone('UTC')) # datetime.now(datetime.timezone.utc)
+        current_datetime = datetime.now(timezone.utc)
         self.add_arbitrary_time_sync_point(label, current_datetime, current_lsl_local_offset)
     
 
@@ -126,7 +126,7 @@ class EasyTimeSyncParsingMixin:
         for a_key, a_value in phopylslhelper_dict.items():
             if a_key.endswith('_datetime') and (a_value is not None):
                 a_ts_value = from_readable_dt_str(unwrap_single_element_listlike_if_needed(a_value))
-                a_ts_value = a_ts_value.astimezone(tz_UTC) ## fixup to UTC
+                a_ts_value = a_ts_value.astimezone(timezone.utc) ## fixup to UTC
                 stream_info_dict[a_key] = a_ts_value
                 print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
             elif a_key.endswith('_lsl_local_offset_seconds') and (a_value is not None):
