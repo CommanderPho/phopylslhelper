@@ -1,6 +1,6 @@
 [project]
 name = "phopylslhelper"
-version = "0.1.4"
+version = "1.0.0"
 description = "A simple wrapper/helper for easy loging with pylsl (labstreaminglayer) "
 readme = "README.md"
 authors = [
@@ -10,6 +10,9 @@ requires-python = ">=3.8.10"
 dependencies = [
     "pylsl>=1.16.2",
     "pytz>=2025.2",
+    "pandas>=1.5.3,<3.0.0",
+    "attrs>=22.2.0,<23",
+    "opencv-python>=4.5.0",
 ]
 
 [build-system]
