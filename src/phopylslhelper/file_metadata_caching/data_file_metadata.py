@@ -124,6 +124,7 @@ class DataFileMetadataParser(BaseFileMetadataParser):
                             start_datetime = start_datetime.astimezone(timezone.utc)
                             
             elif file_ext == '.fif':
+                duration = 0.0
                 if not MNE_AVAILABLE:
                     # Fallback to filename parsing
                     start_datetime = cls.extract_datetime_from_filename(file_path.name)
@@ -134,6 +135,10 @@ class DataFileMetadataParser(BaseFileMetadataParser):
                     # Use MNE read_raw (preload=False for lightweight load)
                     raw = read_raw(file_path, preload=False)
                     meas_datetime = raw.info.get('meas_date', None)
+                    
+                    # Extract duration from raw.times[-1] (last timestamp in seconds)
+                    if len(raw.times) > 0:
+                        duration = float(raw.times[-1])
                     
                     if meas_datetime is None:
                         # Fallback to filename parsing
@@ -161,10 +166,21 @@ class DataFileMetadataParser(BaseFileMetadataParser):
                 # Unsupported file type
                 return None
             
-            return {
+            # Build result dict with duration if available
+            result = {
                 'start_datetime': start_datetime,
                 'file_size': file_size,
             }
+            
+            # Add duration (for .fif files: extracted from raw.times[-1], for .xdf files: 0.0 for now)
+            if file_ext == '.fif':
+                result['duration'] = duration
+            elif file_ext == '.xdf':
+                # For XDF files, duration is not easily available without full load
+                # Set to 0 for now - can be added incrementally later
+                result['duration'] = 0.0
+            
+            return result
             
         except Exception as e:
             # Silently fail - return None to skip this file
@@ -328,10 +344,17 @@ class DataFileMetadataParser(BaseFileMetadataParser):
         df = pd.DataFrame.from_records(_out_df)
         
         # Convert datetime columns
+        # Handle both numeric timestamps (from new processing) and datetime strings (from cache)
         datetime_col_names = ['start_t', 'ctime', 'mtime']
         for col_name in datetime_col_names:
             if col_name in df.columns:
-                df[col_name] = pd.to_datetime(df[col_name], unit='s')
+                # Check dtype: if numeric, use unit='s'; otherwise parse as datetime string
+                if pd.api.types.is_numeric_dtype(df[col_name]):
+                    # Numeric timestamps - use unit='s'
+                    df[col_name] = pd.to_datetime(df[col_name], unit='s')
+                else:
+                    # String or object dtype - parse as datetime (handles datetime strings)
+                    df[col_name] = pd.to_datetime(df[col_name])
         
         # Ensure start_datetime and meas_datetime are datetime objects
         if 'start_datetime' in df.columns:
@@ -350,6 +373,44 @@ class DataFileMetadataParser(BaseFileMetadataParser):
             cls.save_cache(df, cache_path)
         
         return df
+
+    @classmethod
+    def parse_data_folder(cls, folder_path: Path, data_extensions: List[str] = ['.xdf', '.fif'], use_cache: bool = True, force_rebuild: bool = False) -> pd.DataFrame:
+        """
+        Parse all data files in a folder and return a DataFrame with metadata.
+        Uses caching to speed up subsequent runs by only processing new or modified files.
+        
+        This method is similar to VideoMetadataParser.parse_video_folder but configured for data files.
+        
+        Args:
+            folder_path: Path to folder containing data files
+            data_extensions: List of data file extensions to process (default: ['.xdf', '.fif'])
+            use_cache: If True, use cached metadata for unchanged files (default: True)
+            force_rebuild: If True, ignore cache and rebuild from scratch (default: False)
+            
+        Returns:
+            DataFrame with columns:
+            - data_file_path: Full path to data file
+            - start_datetime: Recording start datetime (UTC timezone-aware)
+            - end_datetime: Calculated end datetime (start + duration)
+            - duration: Duration in seconds (0.0 for XDF files, extracted for FIF files)
+            - file_size: File size in bytes
+            - cache_file_size: File size used for cache validation
+            - cache_file_mtime: File modification time used for cache validation
+            
+        DataFrame is sorted by start_datetime.
+        """
+        return cls.parse_filesystem_folder(
+            folder_path=folder_path,
+            included_file_extensions=data_extensions,
+            use_cache=use_cache,
+            force_rebuild=force_rebuild,
+            cache_filename="_data_file_metadata_cache.csv",
+            path_column="data_file_path",
+            start_datetime_column="start_datetime",
+            end_datetime_column="end_datetime",
+            duration_metadata_key="duration"
+        )
 
 
 __all__ = ['DataFileMetadataParser']
