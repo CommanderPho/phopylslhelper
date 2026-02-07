@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-import cv2
 import pandas as pd
 from attrs import define
 from phopylslhelper.file_metadata_caching.file_metadata import BaseFileMetadataParser
@@ -99,6 +98,10 @@ class VideoMetadataParser(BaseFileMetadataParser):
         Returns:
             Dictionary with video metadata or None if extraction fails.
         """
+        try:
+            import cv2
+        except ImportError:
+            raise ImportError("Video metadata extraction requires opencv-python. Install with: pip install opencv-python or pip install phopylslhelper[video]")
         try:
             cap = cv2.VideoCapture(str(video_path))
             if not cap.isOpened():
