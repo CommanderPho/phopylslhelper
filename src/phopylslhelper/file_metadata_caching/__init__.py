@@ -1,11 +1,8 @@
-from phopylslhelper.file_metadata_caching.file_metadata import BaseFileMetadataParser
-from phopylslhelper.file_metadata_caching.manager import BaseFileMetadataManager
-from phopylslhelper.file_metadata_caching.video_metadata import VideoMetadataParser
-from phopylslhelper.file_metadata_caching.data_file_metadata import DataFileMetadataParser
+"""File metadata caching parsers and managers.
 
-__all__ = [
-    'BaseFileMetadataParser',
-    'BaseFileMetadataManager',
-    'VideoMetadataParser',
-    'DataFileMetadataParser',
-]
+Import from submodules explicitly, e.g.::
+
+    from phopylslhelper.file_metadata_caching.data_file_metadata import DataFileMetadataParser
+    from phopylslhelper.file_metadata_caching.video_metadata import VideoMetadataParser
+    from phopylslhelper.file_metadata_caching.manager import BaseFileMetadataManager
+"""

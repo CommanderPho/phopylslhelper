@@ -91,11 +91,21 @@ class BaseFileMetadataParser:
             return True
         try:
             current_metadata = cls.get_file_metadata(file_path)
-            # Cached row columns: cache_file_size, cache_file_mtime (used for cache validation)
-            cached_size = cached_row.get('cache_file_size') if 'cache_file_size' in cached_row.index else 0
-            cached_mtime = cached_row.get('cache_file_mtime') if 'cache_file_mtime' in cached_row.index else 0.0
-            return (current_metadata['file_size'] != cached_size or 
-                    abs(current_metadata['file_mtime'] - cached_mtime) > 0.1)  # 0.1 second tolerance
+            if 'cache_file_size' not in cached_row.index or 'cache_file_mtime' not in cached_row.index:
+                return True
+            cached_size = cached_row.get('cache_file_size')
+            cached_mtime = cached_row.get('cache_file_mtime')
+            if cached_size is None or cached_mtime is None:
+                return True
+            try:
+                cached_size_f = float(cached_size)
+                cached_mtime_f = float(cached_mtime)
+            except (TypeError, ValueError):
+                return True
+            if not math.isfinite(cached_size_f) or not math.isfinite(cached_mtime_f):
+                return True
+            return (float(current_metadata['file_size']) != cached_size_f or
+                    abs(float(current_metadata['file_mtime']) - cached_mtime_f) > 0.1)  # 0.1 second tolerance
         except Exception:
             return True
     
