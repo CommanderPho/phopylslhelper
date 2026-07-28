@@ -8,18 +8,6 @@ import pandas as pd
 from attrs import define
 
 
-def _duration_seconds_safe_for_timedelta(duration: Any) -> float:
-    """Coerce duration to finite non-negative seconds; clamp so ``timedelta(seconds=...)`` cannot overflow."""
-    try:
-        sec = float(duration)
-    except (TypeError, ValueError):
-        return 0.0
-    if not math.isfinite(sec) or sec < 0:
-        return 0.0
-    cap = timedelta.max.total_seconds() - 1.0
-    return min(sec, cap)
-
-
 @define(slots=False)
 class BaseFileMetadataParser:
     """
@@ -27,6 +15,19 @@ class BaseFileMetadataParser:
     and optional type-specific metadata via overridable extract_file_metadata.
     Supports caching with configurable datetime columns.
     """
+
+    @classmethod
+    def _duration_seconds_safe_for_timedelta(cls, duration: Any) -> float:
+        """Coerce duration to finite non-negative seconds; clamp so ``timedelta(seconds=...)`` cannot overflow."""
+        try:
+            sec = float(duration)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(sec) or sec < 0:
+            return 0.0
+        cap = timedelta.max.total_seconds() - 1.0
+        return min(sec, cap)
+
 
     @classmethod
     def extract_datetime_from_filename(cls, filename: str) -> Optional[datetime]:
@@ -54,6 +55,10 @@ class BaseFileMetadataParser:
                     return datetime.strptime(normalized, fmt)
                 except ValueError:
                     continue
+            ## END for fmt in [...]...
+
+        ## END for cand in candidates...
+
         return None
     
 
@@ -131,6 +136,8 @@ class BaseFileMetadataParser:
                 for col in datetime_columns:
                     if col in df.columns:
                         df[col] = pd.to_datetime(df[col])
+                ## END for col in datetime_columns...
+
             return df
         except Exception:
             # Corrupted cache - return empty DataFrame
@@ -212,6 +219,8 @@ class BaseFileMetadataParser:
         for ext in included_file_extensions:
             files.extend(folder_path.glob(f"*{ext}"))
             files.extend(folder_path.glob(f"*{ext.upper()}"))
+        ## END for ext in included_file_extensions...
+
         if not files:
             # No files found - return empty DataFrame and clear cache if it exists
             if cache_path.exists() and use_cache:
@@ -226,6 +235,8 @@ class BaseFileMetadataParser:
             for idx, row in cached_df.iterrows():
                 file_path_str = row[path_column]
                 cached_by_path[file_path_str] = row
+            ## END for idx, row in cached_df.iterrows()...
+
         results = []
         for file_path in files:
             resolved_path = str(file_path.resolve())
@@ -252,13 +263,15 @@ class BaseFileMetadataParser:
                 # Get file metadata for cache validation
                 file_metadata = cls.get_file_metadata(file_path)
                 # Calculate end datetime from start + duration (duration_metadata_key in metadata); clamp bad values from corrupt probes
-                safe_duration = _duration_seconds_safe_for_timedelta(metadata.get(duration_metadata_key, 0))
+                safe_duration = cls._duration_seconds_safe_for_timedelta(metadata.get(duration_metadata_key, 0))
                 metadata_for_row = dict(metadata)
                 metadata_for_row[duration_metadata_key] = safe_duration
                 end_datetime = start_datetime + timedelta(seconds=safe_duration)
                 # Build result row: path_column, start_datetime_column, end_datetime_column, **metadata, cache_file_size, cache_file_mtime
                 result = {path_column: resolved_path, start_datetime_column: start_datetime, end_datetime_column: end_datetime, **metadata_for_row, 'cache_file_size': file_metadata['file_size'], 'cache_file_mtime': file_metadata['file_mtime']}
                 results.append(result)
+        ## END for file_path in files...
+
         if not results:
             # No valid files found - clear cache if it exists
             if cache_path.exists() and use_cache:
@@ -276,5 +289,7 @@ class BaseFileMetadataParser:
             cls.save_cache(df, cache_path)
         return df
 
+
+_duration_seconds_safe_for_timedelta = BaseFileMetadataParser._duration_seconds_safe_for_timedelta
 
 __all__ = ['BaseFileMetadataParser']

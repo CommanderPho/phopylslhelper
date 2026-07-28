@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from phopylslhelper.general_helpers import readable_dt_str, from_readable_dt_str
-from phopylslhelper.easy_time_sync import lsl_stream_timestamps_to_unix_seconds
+from phopylslhelper.general_helpers import GeneralHelpers
+from phopylslhelper.easy_time_sync import EasyTimeSyncParsingMixin
 
 
 def _make_stream_with_sync(stream_start_datetime: datetime, lsl_offset_seconds: float) -> dict:
@@ -15,7 +15,7 @@ def _make_stream_with_sync(stream_start_datetime: datetime, lsl_offset_seconds: 
         'info': {
             'desc': [{
                 'phopylslhelper': [{
-                    'stream_start_datetime': [readable_dt_str(stream_start_datetime)],
+                    'stream_start_datetime': [GeneralHelpers.readable_dt_str(stream_start_datetime)],
                     'stream_start_lsl_local_offset_seconds': [str(lsl_offset_seconds)],
                 }]
             }]
@@ -30,9 +30,9 @@ class TestLslTimestampAlignment(unittest.TestCase):
         offset = 169993.0  # raw LSL local_clock offset at stream start (machine-uptime scale)
         ts = np.array([offset + 0.0, offset + 1.5, offset + 10.0])
 
-        out = lsl_stream_timestamps_to_unix_seconds(_make_stream_with_sync(sdt, offset), ts)
+        out = EasyTimeSyncParsingMixin.lsl_stream_timestamps_to_unix_seconds(_make_stream_with_sync(sdt, offset), ts)
 
-        parsed_sdt = from_readable_dt_str(readable_dt_str(sdt))
+        parsed_sdt = GeneralHelpers.from_readable_dt_str(GeneralHelpers.readable_dt_str(sdt))
         expected = parsed_sdt.timestamp() + (ts - offset)
         np.testing.assert_allclose(out, expected)
         # first sample lands exactly on the stream start wall-clock
@@ -44,7 +44,7 @@ class TestLslTimestampAlignment(unittest.TestCase):
         ts = np.array([1000.0, 1001.0, 1005.5])  # raw values, no sync metadata
         stream = {'info': {'desc': [{}]}}  # empty desc -> no phopylslhelper metadata
 
-        out = lsl_stream_timestamps_to_unix_seconds(stream, ts, fallback_reference_datetime=ref)
+        out = EasyTimeSyncParsingMixin.lsl_stream_timestamps_to_unix_seconds(stream, ts, fallback_reference_datetime=ref)
 
         np.testing.assert_allclose(out, ref.timestamp() + (ts - ts[0]))
         np.testing.assert_allclose(out[0], ref.timestamp())
@@ -52,12 +52,12 @@ class TestLslTimestampAlignment(unittest.TestCase):
 
     def test_no_metadata_no_fallback_returns_raw(self):
         ts = np.array([1.0, 2.0, 3.0])
-        out = lsl_stream_timestamps_to_unix_seconds({'info': {'desc': [{}]}}, ts)
+        out = EasyTimeSyncParsingMixin.lsl_stream_timestamps_to_unix_seconds({'info': {'desc': [{}]}}, ts)
         np.testing.assert_allclose(out, ts)
 
 
     def test_empty_timestamps_returns_empty(self):
-        out = lsl_stream_timestamps_to_unix_seconds({'info': {}}, [])
+        out = EasyTimeSyncParsingMixin.lsl_stream_timestamps_to_unix_seconds({'info': {}}, [])
         self.assertEqual(len(out), 0)
 
 

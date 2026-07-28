@@ -23,18 +23,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 _CACHE_FILENAME = "_data_file_metadata_cache.csv"
 
 
-def _normalize_src_file_key(path_value: Any) -> str:
-    """Resolve a path-like value to a stable cache lookup key."""
-    try:
-        path = Path(path_value)
-        # Absolute paths are already stable; skip expensive Path.resolve() (costly on Dropbox/network).
-        if path.is_absolute():
-            return str(path)
-        return str(path.resolve())
-    except Exception:
-        return str(path_value)
-
-
 @define(slots=False)
 class DataFileMetadataParser(BaseFileMetadataParser):
     """
@@ -53,7 +41,20 @@ class DataFileMetadataParser(BaseFileMetadataParser):
         )
         print(df)
     """
-    
+
+    @classmethod
+    def _normalize_src_file_key(cls, path_value: Any) -> str:
+        """Resolve a path-like value to a stable cache lookup key."""
+        try:
+            path = Path(path_value)
+            # Absolute paths are already stable; skip expensive Path.resolve() (costly on Dropbox/network).
+            if path.is_absolute():
+                return str(path)
+            return str(path.resolve())
+        except Exception:
+            return str(path_value)
+
+
     @classmethod
     def extract_datetime_from_filename(cls, filename: str) -> Optional[datetime]:
         """
@@ -79,6 +80,10 @@ class DataFileMetadataParser(BaseFileMetadataParser):
                     return datetime.strptime(normalized, fmt)
                 except ValueError:
                     continue
+            ## END for fmt in [...]...
+
+        ## END for cand in candidates...
+
         return None
     
     
@@ -210,9 +215,9 @@ class DataFileMetadataParser(BaseFileMetadataParser):
         if existing.empty or 'src_file' not in existing.columns:
             cls.save_cache(result_df, cache_path)
             return
-        current_keys = {_normalize_src_file_key(p) for p in result_df['src_file'].tolist()}
+        current_keys = {cls._normalize_src_file_key(p) for p in result_df['src_file'].tolist()}
         existing = existing.copy()
-        existing['_src_key'] = existing['src_file'].map(_normalize_src_file_key)
+        existing['_src_key'] = existing['src_file'].map(cls._normalize_src_file_key)
         keep = existing[~existing['_src_key'].isin(current_keys)].drop(columns=['_src_key'])
         if keep.empty:
             merged = result_df
@@ -259,7 +264,7 @@ class DataFileMetadataParser(BaseFileMetadataParser):
         cached_by_path: Dict[str, Any] = {}
         if not cached_df.empty and 'src_file' in cached_df.columns:
             for _, row in cached_df.iterrows():
-                cached_by_path[_normalize_src_file_key(row['src_file'])] = row
+                cached_by_path[cls._normalize_src_file_key(row['src_file'])] = row
             ## END for _, row in cached_df.iterrows()....
 
         metadata_key_dict = {'ctime': 'st_ctime', 'size': 'st_size', 'mtime': 'st_mtime'}
@@ -270,7 +275,7 @@ class DataFileMetadataParser(BaseFileMetadataParser):
             if not a_file.exists():
                 return (file_idx, None, False)
 
-            resolved_path = _normalize_src_file_key(a_file)
+            resolved_path = cls._normalize_src_file_key(a_file)
 
             if use_cache and not force_rebuild and resolved_path in cached_by_path:
                 cached_row = cached_by_path[resolved_path]
@@ -456,5 +461,7 @@ class DataFileMetadataParser(BaseFileMetadataParser):
             duration_metadata_key="duration"
         )
 
+
+_normalize_src_file_key = DataFileMetadataParser._normalize_src_file_key
 
 __all__ = ['DataFileMetadataParser']

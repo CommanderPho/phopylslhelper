@@ -110,6 +110,7 @@ class EasyTimeSyncParsingMixin:
                 phopylslhelper_element.append_child_value(f"{label_name}_datetime", readable_dt_str(dt))
             if lsl_offset_sec is not None:
                 phopylslhelper_element.append_child_value(f"{label_name}_lsl_local_offset_seconds", str(lsl_offset_sec))
+        ## END for label_name, (dt, lsl_offset_sec) in self._arbitrary_time_sync_points.items()...
 
         return info
     
@@ -152,6 +153,7 @@ class EasyTimeSyncParsingMixin:
                 stream_info_dict[a_key] = a_ts_value
                 if debug_print:
                     print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
+        ## END for a_key, a_value in phopylslhelper_dict.items()....
 
         # assert 'recording_start_lsl_local_offset_seconds' in desc_info_dict
 
@@ -161,38 +163,43 @@ class EasyTimeSyncParsingMixin:
         #         a_ts_value = a_value_type_convert_fn(unwrap_single_element_listlike_if_needed(desc_info_dict[a_key])) # ['169993.1081304000']
         #         # a_ts_value_dt: datetime = file_datetime + pd.Timedelta(nanoseconds=a_ts_value)
         #         stream_info_dict[a_key] = a_ts_value ## In-contrast to what we get the data from, we SET the data to `stream_info_dict` just as above (flattening)
-                #         print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
+        #         #         print(f'\t FOUND CUSTOM TIMESTAMP SYNC KEY: "{a_key}": {a_ts_value}')
 
 
         return stream_info_dict
 
 
-def lsl_stream_timestamps_to_unix_seconds(stream: dict, timestamps, fallback_reference_datetime: Optional[datetime] = None, debug_print: bool = False) -> np.ndarray:
-    """Convert raw pyxdf LSL ``local_clock`` ``time_stamps`` to absolute Unix seconds.
+    @classmethod
+    def lsl_stream_timestamps_to_unix_seconds(cls, stream: dict, timestamps, fallback_reference_datetime: Optional[datetime] = None, debug_print: bool = False) -> np.ndarray:
+        """Convert raw pyxdf LSL ``local_clock`` ``time_stamps`` to absolute Unix seconds.
 
-    pyxdf ``time_stamps`` are in the LSL ``local_clock()`` domain (roughly machine uptime), not
-    seconds-since-recording-start. The correct conversion (matching ``LabRecorderXDF``) uses the
-    per-stream ``phopylslhelper`` sync metadata embedded in the stream ``desc``:
-    ``unix = stream_start_datetime + (time_stamps - stream_start_lsl_local_offset_seconds)``.
+        pyxdf ``time_stamps`` are in the LSL ``local_clock()`` domain (roughly machine uptime), not
+        seconds-since-recording-start. The correct conversion (matching ``LabRecorderXDF``) uses the
+        per-stream ``phopylslhelper`` sync metadata embedded in the stream ``desc``:
+        ``unix = stream_start_datetime + (time_stamps - stream_start_lsl_local_offset_seconds)``.
 
-    Priority 1: per-stream phopylslhelper sync (stream_start_datetime + (ts - stream_start_lsl_local_offset_seconds)).
-    Priority 2: fallback_reference_datetime + (ts - ts[0]).
-    Priority 3: raw floats (warn).
-    """
-    ts = np.asarray(timestamps, dtype=float)
-    if ts.size == 0:
+        Priority 1: per-stream phopylslhelper sync (stream_start_datetime + (ts - stream_start_lsl_local_offset_seconds)).
+        Priority 2: fallback_reference_datetime + (ts - ts[0]).
+        Priority 3: raw floats (warn).
+        """
+        ts = np.asarray(timestamps, dtype=float)
+        if ts.size == 0:
+            return ts
+        desc_list = (stream.get('info', {}) or {}).get('desc', [{}]) or [{}]
+        desc_info_dict = dict(desc_list[0]) if isinstance(desc_list[0], dict) else {}
+        info: Dict = {}
+        if len(desc_info_dict) > 0:
+            info = cls.parse_and_add_lsl_outlet_info_from_desc(desc_info_dict=desc_info_dict, stream_info_dict={}, should_fail_on_missing=False, should_return_datetime_timezone_UTC=True, debug_print=debug_print)
+        sdt = info.get('stream_start_datetime')
+        soff = info.get('stream_start_lsl_local_offset_seconds')
+        if (sdt is not None) and (soff is not None):
+            return float(sdt.timestamp()) + (ts - float(soff))
+        if fallback_reference_datetime is not None:
+            ref = fallback_reference_datetime if fallback_reference_datetime.tzinfo else fallback_reference_datetime.replace(tzinfo=timezone.utc)
+            return float(ref.timestamp()) + (ts - ts[0])
+        logger.warning("lsl_stream_timestamps_to_unix_seconds: no sync metadata and no fallback; returning raw LSL timestamps")
         return ts
-    desc_list = (stream.get('info', {}) or {}).get('desc', [{}]) or [{}]
-    desc_info_dict = dict(desc_list[0]) if isinstance(desc_list[0], dict) else {}
-    info: Dict = {}
-    if len(desc_info_dict) > 0:
-        info = EasyTimeSyncParsingMixin.parse_and_add_lsl_outlet_info_from_desc(desc_info_dict=desc_info_dict, stream_info_dict={}, should_fail_on_missing=False, should_return_datetime_timezone_UTC=True, debug_print=debug_print)
-    sdt = info.get('stream_start_datetime')
-    soff = info.get('stream_start_lsl_local_offset_seconds')
-    if (sdt is not None) and (soff is not None):
-        return float(sdt.timestamp()) + (ts - float(soff))
-    if fallback_reference_datetime is not None:
-        ref = fallback_reference_datetime if fallback_reference_datetime.tzinfo else fallback_reference_datetime.replace(tzinfo=timezone.utc)
-        return float(ref.timestamp()) + (ts - ts[0])
-    logger.warning("lsl_stream_timestamps_to_unix_seconds: no sync metadata and no fallback; returning raw LSL timestamps")
-    return ts
+
+
+# Module-level function alias for backward compatibility
+lsl_stream_timestamps_to_unix_seconds = EasyTimeSyncParsingMixin.lsl_stream_timestamps_to_unix_seconds
