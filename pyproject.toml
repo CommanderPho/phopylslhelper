@@ -1,11 +1,9 @@
 [project]
 name = "phopylslhelper"
-version = "1.0.8"
+version = "1.1.0"
 description = "A simple wrapper/helper for easy loging with pylsl (labstreaminglayer) "
 readme = "README.md"
-authors = [
-    { name = "Pho Hale", email = "PhoHale@gmail.com" }
-]
+authors = [{ name = "Pho Hale", email = "PhoHale@gmail.com" }]
 requires-python = ">=3.8.10"
 dependencies = [
     "pylsl>=1.16.2",
@@ -24,6 +22,4 @@ build-backend = "hatchling.build"
 [tool.uv.sources]
 
 [dependency-groups]
-dev = [
-    "pytest>=8.3.5",
-]
+dev = ["pytest>=8.3.5"]
